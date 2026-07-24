@@ -1,9 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade, scale } from 'svelte/transition';
-  import { invoke } from '@tauri-apps/api/core';
-  import { openUrl } from '@tauri-apps/plugin-opener';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
 
   type Branch = 'Release' | 'Nightly';
   type Game = 'cs2-csgo_legacy' | 'csgo' | 'cs2';
@@ -31,9 +28,9 @@
     size: number;
   };
 
-  const WEBSITE_URL = 'https://neverlose.cc/';
-  const DISCORD_URL = 'https://discord.gg/neverlosecc';
-  const API_DOCS_URL = 'https://docs-csgo.neverlose.cc/';
+  const WEBSITE_URL = '';
+  const DISCORD_URL = '';
+  const API_DOCS_URL = '';
 
   let view = $state<View>('boot');
   let game = $state<Game>('csgo');
@@ -82,7 +79,7 @@
   const updatedAtLabel = $derived(formatGitDate(selectedVersionData?.updated_at));
   const changelogEntries = $derived(parseChangelog(selectedVersionData?.changelog));
   const selectedReleaseUrl = $derived(selectedVersionData?.url ?? '');
-  const appWindow = getOptionalCurrentWindow();
+  const appWindow: any = null;
 
   type LauncherTheme = {
     source: string;
@@ -101,16 +98,8 @@
     nightlies: LauncherVersion[];
   };
 
-  function getOptionalCurrentWindow() {
-    try {
-      return getCurrentWindow();
-    } catch {
-      return null;
-    }
-  }
-
   function hasTauriRuntime() {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    return false;
   }
 
   onMount(() => {
@@ -178,43 +167,16 @@
     installedStatus = { cs2_legacy_branch: true, csgo_standalone: true, cs2_standalone: true };
   }
 
-  const appids: Record<Game, number> = {
-      csgo: 4465480,
-      'cs2-csgo_legacy': 730,
-      cs2: 730,
-  };
-
   function showLauncher() {
     view = 'launcher';
   }
 
   async function loadTheme() {
-    if (!hasTauriRuntime()) {
-      return;
-    }
-
-    try {
-      const theme = await invoke<LauncherTheme>('load_launcher_theme');
-      themeVariables = Object.entries(theme.variables)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('; ');
-    } catch (error) {
-      console.warn('Failed to load launcher theme', error);
-    }
+    // Theme loading requires Tauri runtime — no-op in browser
   }
 
   async function loadSettings() {
-    if (!hasTauriRuntime()) {
-      profileNameInput = username;
-      return;
-    }
-
-    try {
-      const settings = await invoke<LauncherSettings>('load_launcher_settings');
-      applyLauncherSettings(settings);
-    } catch (error) {
-      console.warn('Failed to load launcher settings', error);
-    }
+    profileNameInput = username;
   }
 
   function applyLauncherSettings(settings: LauncherSettings) {
@@ -231,38 +193,44 @@
 
   $effect(() => { game; loadGitMetadata(); });
 
-  async function loadGitMetadata() {
-    try {
-      const resp = await fetch('/changelogs.json');
-      const data: Changelogs = await resp.json();
-      const entry = data[game] ?? { tag: 'Unknown', updated_at: '', url: '', changelog: '-' };
-      gitMetadata = {
-        releases: [{ tag: entry.tag, name: entry.tag, changelog: entry.changelog, updated_at: entry.updated_at, url: entry.url, assets: [] }],
-        nightlies: []
-      };
-      selectedVersion = entry.tag;
-    } catch {
-      gitMetadata = { releases: [{ tag: '?', name: '?', changelog: 'Failed to load.', updated_at: '', url: '', assets: [] }], nightlies: [] };
-      selectedVersion = '?';
+  const inlineChangelogs: Changelogs = {
+    cs2: {
+      tag: 'v1.1.7',
+      updated_at: '2024-09-03T22:32:58Z',
+      url: '',
+      changelog: '- Improved «Hit Chance»\n- Improved «Multipoint»\n- Improved overall Rage Aimbot accuracy.\n- Added «Force Lethal In Air» feature.'
+    },
+    'cs2-csgo_legacy': {
+      tag: 'v3.8.0',
+      updated_at: '2026-07-11T09:12:03Z',
+      url: '',
+      changelog: '- luas that worked before now work again\n- removed some closure libraries\n- restored build.rs\n- fixed duplicate entries'
+    },
+    csgo: {
+      tag: 'v2.3.1',
+      updated_at: '2026-06-12T00:00:00Z',
+      url: '',
+      changelog: '- Improved Rage Aimbot accuracy'
     }
+  };
+
+  function loadGitMetadata() {
+    const entry = inlineChangelogs[game] ?? { tag: 'Unknown', updated_at: '', url: '', changelog: '-' };
+    gitMetadata = {
+      releases: [{ tag: entry.tag, name: entry.tag, changelog: entry.changelog, updated_at: entry.updated_at, url: entry.url, assets: [] }],
+      nightlies: []
+    };
+    selectedVersion = entry.tag;
   }
 
-  async function minimizeWindow(event?: MouseEvent) {
+  function minimizeWindow(event?: MouseEvent) {
     event?.preventDefault();
     event?.stopPropagation();
-    if (!hasTauriRuntime()) {
-      return;
-    }
-    await invoke('minimize_main_window');
   }
 
-  async function closeWindow(event?: MouseEvent) {
+  function closeWindow(event?: MouseEvent) {
     event?.preventDefault();
     event?.stopPropagation();
-    if (!hasTauriRuntime()) {
-      return;
-    }
-    await invoke('close_main_window');
   }
 
   function openDetails() {
@@ -333,21 +301,8 @@
     configOpen = false;
   }
 
-  async function openExternal(url: string) {
-    if (!url) {
-      return;
-    }
-
-    if (!hasTauriRuntime()) {
-      window.open(url, '_blank', 'noreferrer');
-      return;
-    }
-
-    try {
-      await openUrl(url);
-    } catch (error) {
-      console.warn('Failed to open link', error);
-    }
+  function openExternal(_url: string) {
+    // disabled — no external navigation
   }
 
   function openProfile(event: MouseEvent) {
@@ -454,27 +409,11 @@
 
     profileSaving = true;
     profileError = '';
-    if (!hasTauriRuntime()) {
-      username = nextUsername;
-      profileNameInput = username;
-      avatarDataUrlBeforeEdit = avatarDataUrl;
-      pendingAvatarBytes = null;
-      profileSaving = false;
-      return;
-    }
-
-    try {
-      const settings = await invoke<LauncherSettings>('save_launcher_profile', {
-        username: nextUsername,
-        avatarBytes: pendingAvatarBytes
-      });
-      applyLauncherSettings(settings);
-      pendingAvatarBytes = null;
-    } catch (error) {
-      profileError = String(error);
-    } finally {
-      profileSaving = false;
-    }
+    username = nextUsername;
+    profileNameInput = username;
+    avatarDataUrlBeforeEdit = avatarDataUrl;
+    pendingAvatarBytes = null;
+    profileSaving = false;
   }
 
   async function saveProfileName() {
@@ -498,13 +437,11 @@
     }
   }
 
-  function launch(appid: number) {
+  function launch() {
     branchOpen = false;
     launchPending = true;
     launchError = '';
     progress = 0;
-    const versionToLaunch = selectedVersion;
-    const configIdToLaunch = selectedConfigId;
 
     if (closeTimer) {
       window.clearTimeout(closeTimer);
@@ -518,40 +455,20 @@
 
       view = 'launching';
       launchTimer = undefined;
-      void startLaunchProgress(versionToLaunch, configIdToLaunch, appid);
+      void startLaunchProgress();
     }, 230);
   }
 
-  async function startLaunchProgress(versionToLaunch: string, configIdToLaunch: number | null, appid: number | null) {
+  async function startLaunchProgress() {
     const startedAt = performance.now();
-    let finished = false;
     const tick = () => {
       const elapsed = performance.now() - startedAt;
-      progress = finished ? 100 : Math.min(92, 18 + (elapsed / 3200) * 74);
-
-      if (!finished) {
+      progress = Math.min(100, 18 + (elapsed / 3200) * 82);
+      if (progress < 100) {
         requestAnimationFrame(tick);
       }
     };
-
     requestAnimationFrame(tick);
-
-    try {
-      await invoke('download_and_launch_version');
-      // todo: wait until we see csgo.exe to determine if we're actually done
-      finished = true;
-      progress = 100;
-      window.setTimeout(() => {
-        void appWindow?.close().catch(() => undefined);
-      }, 1000);
-    } catch (error) {
-      console.warn('Failed to launch selected version', error);
-      launchError = String(error);
-      launchPending = false;
-      view = 'details';
-      progress = 0;
-      await invoke('kill_background_processes');
-    }
   }
 
   function closeBranchFromBackdrop() {
@@ -605,7 +522,7 @@
   function renderMarkdownLine(value: string) {
     return escapeHtml(value).replace(
       /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noreferrer">$1</a>'
+      '$1'
     );
   }
 
@@ -993,7 +910,7 @@
                 >
                   {@render IconChevron()}
                 </button>
-                <button disabled={branchOpen || launchPending} class="load" onclick={() => launch(appids[game])}>
+                <button disabled={branchOpen || launchPending} class="load" onclick={() => launch()}>
                   <span class="play-icon">{@render IconPlay()}</span>
                   Load
                 </button>
